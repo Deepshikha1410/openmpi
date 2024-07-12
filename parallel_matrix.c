@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
+#include <time.h>
 
 #define SIZE 400
+#define RESULT 40000 
 
 int main(int argc, char** argv) {
     int rank, size;
@@ -10,7 +12,7 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Allocate memory for local matrices
+    // Allocate memory for matrices
     int **A = (int **)malloc(SIZE * sizeof(int *));
     int **B = (int **)malloc(SIZE * sizeof(int *));
     int **C = (int **)malloc(SIZE * sizeof(int *));
@@ -29,20 +31,11 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Scatter A and B matrices to all processes
-    int *A_buf = (int *)malloc(SIZE * SIZE * sizeof(int));
-    int *B_buf = (int *)malloc(SIZE * SIZE * sizeof(int));
-    for (int i = 0; i < SIZE; i++) {
-        for (int j = 0; j < SIZE; j++) {
-            A_buf[i * SIZE + j] = A[i][j];
-            B_buf[i * SIZE + j] = B[i][j];
-        }
-    }
-    MPI_Scatter(A_buf, SIZE * SIZE / size, MPI_INT, A[0], SIZE * SIZE / size, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Scatter(B_buf, SIZE * SIZE / size, MPI_INT, B[0], SIZE * SIZE / size, MPI_INT, 0, MPI_COMM_WORLD);
+    // Start time
+    double start_time = MPI_Wtime();
 
     // Perform local matrix multiplication
-    for (int i = rank * SIZE / size; i < (rank + 1) * SIZE / size; i++) {
+    for (int i = rank; i < SIZE; i += size) {
         for (int j = 0; j < SIZE; j++) {
             for (int k = 0; k < SIZE; k++) {
                 C[i][j] += A[i][k] * B[k][j];
@@ -50,18 +43,26 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Gather C matrices from all processes
-    int *C_buf = (int *)malloc(SIZE * SIZE * sizeof(int));
-    MPI_Gather(C[0], SIZE * SIZE / size, MPI_INT, C_buf, SIZE * SIZE / size, MPI_INT, 0, MPI_COMM_WORLD);
+    // Gather 
+    MPI_Gather(C[0], SIZE * SIZE / size, MPI_INT, C[0], SIZE * SIZE / size, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Print result on process 0
+    // End time
+    double end_time = MPI_Wtime();
+
+    // Check condition
     if (rank == 0) {
+        int sum = 0;
         for (int i = 0; i < SIZE; i++) {
             for (int j = 0; j < SIZE; j++) {
-                printf("%d ", C_buf[i * SIZE + j]);
+                sum += C[i][j];
             }
-            printf("\n");
         }
+        if (sum == RESULT) {
+            printf("correct\n");
+        } else {
+            printf("incorrect :\n");
+        }
+        printf("Execution Time: %f seconds\n", end_time - start_time);
     }
 
     // Free allocated memory
@@ -73,9 +74,6 @@ int main(int argc, char** argv) {
     free(A);
     free(B);
     free(C);
-    free(A_buf);
-    free(B_buf);
-    free(C_buf);
 
     MPI_Finalize();
     return 0;
